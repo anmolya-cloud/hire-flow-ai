@@ -1,8 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from app.ollama_client import ask_llama
 from app.resume_parser import parse_resume
 from app.jd_matcher import match_resume_to_jd
 from pydantic import BaseModel
+from app.file_extractors import extract_text_from_pdf, extract_text_from_docx, extract_text_from_image
+from app.text_cleaner import clean_text
+
 
 app = FastAPI()
 
@@ -35,3 +38,27 @@ def test_llm():
 @app.get("/")
 def health():
     return {"status": "AI-TESTCO backend running"}
+
+@app.post("/upload-resume")
+def upload_resume(file: UploadFile = File(...)):
+    file_bytes = file.file.read()
+    text = ""
+
+    if file.content_type == "application/pdf":
+        text = extract_text_from_pdf(file_bytes)
+    elif file.content_type in [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword"
+    ]:
+        text = extract_text_from_docx(file_bytes)
+    elif file.content_type.startswith("image/"):
+        text = extract_text_from_image(file_bytes)
+    else:
+        return {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "message": "Unsupported file type for now"
+        }
+
+    cleaned_text = clean_text(text)
+    return {"text": cleaned_text[:5000]}  # preview
